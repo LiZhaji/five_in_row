@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <title>五子棋</title>
+    <link rel="shortcut icon" type="image/x-icon" href="avatar.jpg" />
+    <link rel="stylesheet" href="five.css" />
+    <!-- <style>
+    @import url(./five.css);
+    </style> -->
+  </head>
+  <body>
+    <div class="rela">
+      <canvas id="rows" width="800" height="800"></canvas>
+      <div id="tools">
+        <div>
+          <p>黑方: <span id="blackWins"></span></p>
+          <p>白方: <span id="whiteWins"></span></p>
+        </div>
+        <div>
+          <p><button data-reop="1" class="btn">重开一局</button></p>
+          <p><button data-reop="2" class="btn">重新选择</button></p>
+        </div>
+      </div>
+    </div>
+
+    <div id="playSelect" class="dialog">
+      <div class="box">
+        <p class="title">请选择游戏类型：</p>
+        <p class="around">
+          <button data-play="0" class="btn">和电脑玩</button>
+          <button data-play="1" class="btn">我有俩人</button>
+        </p>
+      </div>
+    </div>
+    <div id="playAgain" class="dialog">
+      <div class="box">
+        <p id="winerTitle" class="title"></p>
+        <p class="around">
+          <button id="keepGoing" class="btn">继续</button>
+        </p>
+      </div>
+    </div>
+    <script src="./js/vars.js"></script>
+    <script src="./js/canvas.js"></script>
+    <script src="./js/computerDown.js"></script>
+    <script src="./js/initFn.js"></script>
+    <script src="./js/success.js"></script>
+    <script>
+
+      // 根据屏幕初始化画布大小
+      initCanvas();
+
+      // 绑定所有按钮的事件监听
+      bindEvent();
+
+      function initCanvas() {
+        if (
+          /Android|webOS|iPhone|iPod|BlackBerry|iPad/i.test(navigator.userAgent)
+        ) {
+          const screenW = window.screen.width;
+          rows.pieceR = 12;
+          rows.sideL = 30;
+          rows.rowNum = Math.floor((screenW - 20 - rows.sideL) / rows.sideL);
+          boardSideL = (rows.rowNum + 1) * rows.sideL;
+          blackSideL = rows.sideL / 2;
+          cv.width = boardSideL;
+          cv.height = boardSideL;
+        }
+      }
+
+      function bindEvent() {
+        // 选择游戏
+        playSelectDia.addEventListener("click", initGame);
+
+        // 用户下棋
+        cv.addEventListener("click", handleDown);
+
+        // 初始化棋盘
+        keepGoing.addEventListener("click", initBoard);
+
+        // 新一局游戏 或 重新选择游戏
+        tools.addEventListener("click", e => {
+          const opt = e.target.dataset.reop || "";
+          if (!opt) {
+            return;
+          }
+          opt === "1" ? initBoard() : (playSelectDia.style.display = "flex");
+        });
+      }
+
+      // 初始化游戏，重新选择
+      function initGame(e) {
+        playSelectDia.style.display = "flex";
+
+        const playN = e.target.dataset.play || "";
+        if (!playN) {
+          return;
+        }
+        playStyle = playN;
+
+        result.black = 0;
+        result.white = 0;
+        changeResult(result.black, result.white);
+
+        initBoard();
+        playSelectDia.style.display = "none";
+      }
+
+      // 初始化棋盘
+      function initBoard() {
+        playAgainDia.style.display === "none"
+          ? ""
+          : (playAgainDia.style.display = "none");
+
+        process = {};
+        blackTime = true;
+        gameover = false;
+        piecesCount = [];
+        for (let i = 0; i <= rows.rowNum; i++) {
+          const row = [];
+          for (let j = 0; j <= rows.rowNum; j++) {
+            row.push(0);
+          }
+          piecesCount.push(row);
+        }
+
+        ctx.clearRect(0, 0, boardSideL, boardSideL);
+        printBoard();
+
+        // 根据选择的游戏类型进行下棋函数初始化
+        const fns = downFnInit();
+        downWhite = fns.downWhite;
+        downAuto = fns.downAuto;
+      }
+
+      function downFnInit() {
+        // 0：跟电脑下  1：都用户下
+        if (playStyle === "0") {
+          return {
+            downWhite: computerDown,
+            downAuto: async (x, y, pieceX, pieceY) => {
+              await downBlack(x, y, pieceX, pieceY);
+              gameover ? "" : downWhite();
+            }
+          };
+        } else if (playStyle === "1") {
+          return {
+            downWhite: async (x, y, pieceX, pieceY) => {
+              await printPiece(pieceX, pieceY, "wheat");
+              piecesCount[x][y] = 2;
+              hadDown += 1
+              blackTime = true;
+
+              if (ifSuccess(x, y)) {
+                return;
+              }
+            },
+            downAuto: (x, y, pieceX, pieceY) => {
+              blackTime
+                ? downBlack(x, y, pieceX, pieceY)
+                : downWhite(x, y, pieceX, pieceY);
+            }
+          };
+        }
+      }
+
+      // 处理用户点击棋盘事件
+      function handleDown(e) {
+        if (gameover) {
+          return;
+        }
+
+        // 最外层点击无效，判断为越界
+        /* const crossX =
+          e.offsetX < rows.sideL / 2 ||
+          e.offsetX > rows.sideL * (rows.rowNum - 0.5);
+        const crossY =
+          e.offsetY < rows.sideL / 2 ||
+          e.offsetY > rows.sideL * (rows.rowNum - 0.5);
+        */
+
+        // 点击留白处，判断为越界
+        const crossX =
+          e.offsetX < blackSideL || e.offsetX > boardSideL - blackSideL;
+        const crossY =
+          e.offsetY < blackSideL || e.offsetY > boardSideL - blackSideL;
+        if (crossX || crossY) {
+          console.log("越界了！");
+          return;
+        }
+
+        // 对应的二维位置
+        const x = Math.round((e.offsetX - blackSideL) / rows.sideL);
+        const y = Math.round((e.offsetY - blackSideL) / rows.sideL);
+        if (piecesCount[x][y]) {
+          console.log("重复点击！");
+          return;
+        }
+
+        // 对应的canvas的位置
+        const focusX = x * rows.sideL;
+        const focusY = y * rows.sideL;
+
+        // 点击位置距离圆心位置的长度
+        const distanceX = crossX ? Infinity : Math.abs(e.offsetX - focusX - blackSideL);
+        const distanceY = crossY ? Infinity : Math.abs(e.offsetY - focusY - blackSideL);
+
+        // 根据长度判断点击是否有效，确定棋子的圆心
+        const pieceX = distanceX <= rows.validR ? focusX : -1;
+        const pieceY = distanceY <= rows.validR ? focusY : -1;
+        if (pieceX === -1 || pieceY === -1) {
+          console.log("无效点击！");
+          return;
+        }
+
+        downAuto(x, y, pieceX, pieceY);
+      }
+
+      // 是否需要自动化下白棋, 由 playN (游戏类型)决定，在 initGame() 中
+      function downAuto() {}
+
+      // 如何下白棋, 同上
+      function downWhite() {}
+
+      // 下黑棋
+      async function downBlack(x, y, pieceX, pieceY) {
+        await printPiece(pieceX, pieceY, "black");
+        piecesCount[x][y] = 1;
+        hadDown += 1
+        blackTime = false;
+
+        return new Promise(r => {
+          ifSuccess(x, y);
+          r();
+        });
+      }
+
+      function changeResult(bl, wh) {
+        blackWins.innerText = result.black;
+        whiteWins.innerText = result.white;
+      }
+    </script>
+  </body>
+</html>
